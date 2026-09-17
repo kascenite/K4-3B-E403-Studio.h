@@ -1,12 +1,8 @@
 """Renders the LabCoach-facing list of still-open questions.
 
-Console/file output only in this baseline -- no real delivery. A future
-send_to_discord(report_text, webhook_url) can be added here once real
-notification delivery is in scope; keep it a separate function so
-format_report() stays a pure string-builder with no network access. Nothing
-in this module should ever make a network call -- if that changes, re-check
-spec.md §4's non-goals first (no auto-sending anything without a human
-approving it).
+Console/file output only -- pure string-building, no network access. Real
+delivery lives in notify/discord_client.py (send_to_discord), kept separate
+so this module never needs a network call.
 
 SAFETY: never print the raw `author` (D#### code) as a labeled identifier in
 the report -- track-b-discord-assistant.md's safety notes say not to name or
@@ -69,7 +65,3 @@ def write_report(report_text: str, out_path: str | Path) -> None:
     path = Path(out_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(report_text, encoding="utf-8")
-
-
-# TODO(notify, future work): send_to_discord(report_text: str, webhook_url: str) -> None
-# Real delivery is out of scope for this baseline -- interface shape only.
