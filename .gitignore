@@ -1,0 +1,16 @@
+# Assignment pack + real course data — never publish
+K4-3A-Day05-06-AI-Product-Hackathon/
+data/
+
+# Secrets
+.env
+.env.*
+*.pem
+
+# Local / toolchain
+node_modules/
+.venv/
+venv/
+__pycache__/
+.DS_Store
+Thumbs.db
