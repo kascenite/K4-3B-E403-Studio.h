@@ -4,14 +4,14 @@
 
 ## 👥 Thành viên nhóm & Phân công vai trò
 
-**Lớp:** 3B · **Phòng:** E403 · **Cụm:** ____ · **Track:** ____ · **Nhóm:** Studio.h
+**Lớp:** 3B · **Phòng:** E403 · **Cụm:** ____ · **Track:** B2 · **Nhóm:** Studio.h
 
 | Họ và Tên | Mã Học Viên | Vai trò chính | Phần việc đảm nhiệm trong dự án |
 |---|---|---|---|
-| Đào Quang Thái Anh | 2A202602987 |  |  |
-| Nguyễn Đức Thịnh | 2A202602468 |  |  |
-| Văn Quốc Dũng | 2A202602505 |  |  |
-| Lương Sỹ Khánh | 2A202602715 |  |  |
+| Đào Quang Thái Anh | 2A202602987 | AI / workflow | AI logic + LangGraph — quyết định tin nào là câu hỏi còn tồn và cần nhắc LabCoach |
+| Nguyễn Đức Thịnh | 2A202602468 | Backend / web | Backend, giao diện, notification gửi danh sách câu tồn kèm link tin |
+| Văn Quốc Dũng | 2A202602505 | Quản lý / QA | Điều phối nhóm, QA, spec/canvas, evidence |
+| Lương Sỹ Khánh | 2A202602715 | Discord | Discord integration + phát hiện tin nhắn chưa được trả lời |
 
 > Nhóm copy nguyên file README này về repo của mình, rồi điền bảng trên. Cột **Phần việc đảm nhiệm** ghi càng cụ thể càng tốt.
 
