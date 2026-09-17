@@ -1,16 +1,22 @@
-# Assignment pack + real course data — never publish
-K4-3B-Day05-06-AI-Product-Hackathon/
+# Course data pack — do not commit (README: Bảo mật dữ liệu, điều 2–3)
+# Repo nộp bài chỉ được trích ngắn + dẫn mã (T##### / D#### / [Txx-NNN]), không đẩy nguyên pack.
 data/
 
-# Secrets
+# API keys & secrets (02-guide.md §3.4)
 .env
 .env.*
+!.env.example
 *.pem
+*.key
+credentials.json
+service-account*.json
 
 # Local / toolchain
 node_modules/
 .venv/
 venv/
 __pycache__/
+*.pyc
 .DS_Store
 Thumbs.db
+*.log

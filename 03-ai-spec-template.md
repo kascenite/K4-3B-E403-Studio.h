@@ -1,4 +1,9 @@
-# AI SPEC — [Tên lát cắt] · Nhóm Studio.h · Zone E403
+# Template AI Spec *(spec.md — commit trước hạn chốt spec: 21:00 18/9, tại CP4 · quality bar chốt từ thời điểm nộp)*
+
+> Cấu trúc phủ đúng "SPEC 8 phần" của chương trình: Bằng chứng (§1-§2) · Lát cắt (§4) · Canvas (đính kèm CP1) · Augment/Automate (§4) · 4 đường đi của trải nghiệm (§6) · Kiểu lỗi (§5) · Kiểm thử (§7) · Phân công (§8). Hướng dẫn viết từng mục: `02-guide.md`.
+
+```markdown
+# AI SPEC — [Tên lát cắt] · Nhóm [XX] · Zone [X]
 Hướng: [ ] A — VLearn  [ ] B — Trợ lý Học viên  [ ] C — Làn mở
 Loại: [ ] Tối ưu tính năng có sẵn  [ ] Tính năng mới
 
@@ -27,21 +32,12 @@ Loại: [ ] Tối ưu tính năng có sẵn  [ ] Tính năng mới
 - §4b. Nguyên tắc đã áp dụng (≥4 — HAX/PAIR, xem guide):
   | Nguyên tắc | Áp cụ thể vào đâu trong prototype |
   |---|---|
-  |  |  |
 
 ## §5. Kiểu lỗi — 4 lớp chỗ khó + kịch bản (≥8) [bảng theo guide §2.5]
 
-| tình huống cụ thể | lớp | hành vi mong muốn | nguyên tắc |
-|---|---|---|---|
-|  |  |  |  |
-
 ## §6. Bốn đường đi của trải nghiệm
-- Happy path:
-- Low-confidence (②):
-- Failure/không căn cứ (①):
-- Correction (user sửa):
-- Khi bị đòi ngoài phạm vi (③):
-- Case đặc thù domain (④):
+- Happy path: · Low-confidence (②): · Failure/không căn cứ (①): · Correction (user sửa):
+- Khi bị đòi ngoài phạm vi (③): · Case đặc thù domain (④):
 
 ## §7. Kiểm thử
 - Chiều chất lượng + định nghĩa kiểm chứng được:
@@ -56,5 +52,4 @@ Loại: [ ] Tối ưu tính năng có sẵn  [ ] Tính năng mới
 
 ## §9. Changelog
 | Thời điểm | Đổi gì | Vì sao (trỏ về feedback/case nào) |
-|---|---|---|
-|  |  |  |
+```
