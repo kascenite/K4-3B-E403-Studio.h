@@ -1,0 +1,7 @@
+# --- CP2 baseline (used now) ---
+# stdlib only: csv, dataclasses, datetime, pathlib, argparse -- nothing to install.
+
+# --- CP3, added early so everyone's environment installs cleanly from hour one;
+#     not imported/called anywhere yet ---
+langgraph>=0.2,<0.3
+langchain-core>=0.3,<0.4
