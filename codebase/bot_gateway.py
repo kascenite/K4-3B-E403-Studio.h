@@ -72,10 +72,10 @@ client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 
-async def _reply_with_candidates(interaction: discord.Interaction, messages: list, now) -> None:
+async def _reply_with_candidates(interaction: discord.Interaction, messages: list, now, ephemeral: bool = False) -> None:
     candidates = find_unanswered_questions(messages, now=now, min_hours_unanswered=MIN_HOURS_UNANSWERED)
     if not candidates:
-        await interaction.followup.send("No unanswered questions right now.")
+        await interaction.followup.send("No unanswered questions right now.", ephemeral=ephemeral)
         return
 
     decisions = decide(candidates)
@@ -84,7 +84,7 @@ async def _reply_with_candidates(interaction: discord.Interaction, messages: lis
     ]
     # Discord caps a single message at 10 embeds -- send in batches if needed.
     for i in range(0, len(embeds), 10):
-        await interaction.followup.send(embeds=embeds[i : i + 10])
+        await interaction.followup.send(embeds=embeds[i : i + 10], ephemeral=ephemeral)
 
 
 @tree.command(
@@ -112,18 +112,77 @@ async def _dataset_autocomplete(interaction: discord.Interaction, current: str) 
     description="Run the unanswered-question check against a sample data pack",
     guild=GUILD_OBJECT,
 )
-@app_commands.describe(dataset="Which sample CSV to run against")
+@app_commands.describe(dataset="Which sample CSV to run against", private="Only show the result to you (default: public)")
 @app_commands.autocomplete(dataset=_dataset_autocomplete)
-async def labcoach_demo(interaction: discord.Interaction, dataset: str) -> None:
-    await interaction.response.defer()
+async def labcoach_demo(interaction: discord.Interaction, dataset: str, private: bool = False) -> None:
+    await interaction.response.defer(ephemeral=private)
     csv_path = DISCORD_PACK_DIR / dataset
     if not csv_path.exists():
-        await interaction.followup.send(f"No such dataset: {dataset}")
+        await interaction.followup.send(f"No such dataset: {dataset}", ephemeral=private)
         return
 
     messages = load_messages(csv_path)
     now = max(m.created_at for m in messages)
-    await _reply_with_candidates(interaction, messages, now)
+    await _reply_with_candidates(interaction, messages, now, ephemeral=private)
+
+
+MAX_CSV_PREVIEW_ROWS = 25
+CSV_PREVIEW_CONTENT_WIDTH = 200  # column-width truncation for table readability, not the citation rule's 2-sentence limit
+
+
+@tree.command(
+    name="labcoach-csv-preview",
+    description="Privately preview raw rows from a sample data pack (only visible to you)",
+    guild=GUILD_OBJECT,
+)
+@app_commands.describe(
+    dataset="Which sample CSV to preview",
+    rows=f"How many rows to show (default 10, max {MAX_CSV_PREVIEW_ROWS})",
+    offset="Skip this many rows first, to page through the file",
+)
+@app_commands.autocomplete(dataset=_dataset_autocomplete)
+async def labcoach_csv_preview(
+    interaction: discord.Interaction, dataset: str, rows: int = 10, offset: int = 0
+) -> None:
+    await interaction.response.defer(ephemeral=True)
+    csv_path = DISCORD_PACK_DIR / dataset
+    if not csv_path.exists():
+        await interaction.followup.send(f"No such dataset: {dataset}", ephemeral=True)
+        return
+
+    rows = max(1, min(rows, MAX_CSV_PREVIEW_ROWS))
+    offset = max(0, offset)
+    messages = load_messages(csv_path)
+    page = messages[offset : offset + rows]
+    if not page:
+        await interaction.followup.send(f"No rows at offset {offset} (dataset has {len(messages)} total).", ephemeral=True)
+        return
+
+    lines = []
+    for m in page:
+        content = m.content[:CSV_PREVIEW_CONTENT_WIDTH]
+        if len(m.content) > CSV_PREVIEW_CONTENT_WIDTH:
+            content += "..."
+        lines.append(f"{m.msg_id} | {m.author} | {m.created_at:%Y-%m-%d %H:%M} | {m.channel} | {content}")
+
+    header = f"Rows {offset}-{offset + len(page) - 1} of {len(messages)} in {dataset}:"
+    # A full page of long rows can exceed Discord's 2000-char message cap --
+    # chunk onto code-block boundaries rather than assume it always fits.
+    # The first chunk also carries the header line, so it gets less budget.
+    fence_overhead = len("```\n\n```")
+    budget = 2000 - fence_overhead - len(header) - 1
+    chunks: list[list[str]] = [[]]
+    chunk_len = 0
+    for line in lines:
+        if chunk_len + len(line) + 1 > budget and chunks[-1]:
+            chunks.append([])
+            chunk_len = 0
+        chunks[-1].append(line)
+        chunk_len += len(line) + 1
+
+    await interaction.followup.send(f"{header}\n```\n{chr(10).join(chunks[0])}\n```", ephemeral=True)
+    for chunk in chunks[1:]:
+        await interaction.followup.send(f"```\n{chr(10).join(chunk)}\n```", ephemeral=True)
 
 
 @client.event
