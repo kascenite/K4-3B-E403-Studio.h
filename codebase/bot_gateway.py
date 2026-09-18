@@ -44,7 +44,7 @@ import discord
 from discord import app_commands
 from dotenv import load_dotenv
 
-from ai_decide.stub import decide
+from ai_decide.stub import Decision, decide
 from data.discord_live import fetch_recent_messages
 from data.loader import load_messages
 from detect.rules import find_unanswered_questions
@@ -52,7 +52,31 @@ from notify.formatter import format_candidate_embed
 
 MIN_HOURS_UNANSWERED = 4.0  # matches detect.rules.find_unanswered_questions's default
 LOOKBACK_SAFETY_MARGIN_HOURS = 2.0  # matches run_live.py's live-mode lookback
+MAX_CONTEXT_HOURS = MIN_HOURS_UNANSWERED + LOOKBACK_SAFETY_MARGIN_HOURS  # bounds the LLM context window
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # only GEMINI_API_KEY is configured in .env
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")  # separate/higher free-tier quota than gemini-3.5-flash
+MAX_AI_REVIEW_PER_CALL = 5  # stay well under the free tier's per-minute quota
 DISCORD_PACK_DIR = Path(__file__).resolve().parent.parent / "data" / "discord-pack"
+
+
+def _decide_with_ai_cap(candidates: list, all_messages: list) -> list[Decision]:
+    """AI-reviews at most MAX_AI_REVIEW_PER_CALL candidates (oldest-waiting
+    first, matching find_unanswered_questions's own sort order) -- the rest
+    stay rule-based-only (still shown, just not AI-reviewed) so a command
+    with many candidates doesn't sit retrying against the free-tier rate
+    limit for minutes."""
+    ai_batch, rule_based_only = candidates[:MAX_AI_REVIEW_PER_CALL], candidates[MAX_AI_REVIEW_PER_CALL:]
+    decisions = decide(ai_batch, all_messages=all_messages, provider=LLM_PROVIDER, model_name=GEMINI_MODEL) if ai_batch else []
+    decisions += [
+        Decision(
+            candidate=c,
+            still_needs_attention=True,
+            confidence=None,
+            rationale="[Rule-based only] Skipped AI review -- over the per-call AI review cap",
+        )
+        for c in rule_based_only
+    ]
+    return decisions
 
 load_dotenv()
 
@@ -78,7 +102,22 @@ async def _reply_with_candidates(interaction: discord.Interaction, messages: lis
         await interaction.followup.send("No unanswered questions right now.", ephemeral=ephemeral)
         return
 
-    decisions = decide(candidates)
+    # Bounded context pool -- graph.py's context-gathering has no upper time
+    # bound, so an unbounded `messages` (e.g. the full CSV pack) could dump
+    # hundreds of "subsequent messages" into one LLM prompt.
+    context_pool = [m for m in messages if now - timedelta(hours=MAX_CONTEXT_HOURS) <= m.created_at <= now]
+    decisions = _decide_with_ai_cap(candidates, context_pool)
+    # AI classification can clear a rule-based candidate (already answered per
+    # context) -- only still-open ones get posted, matching format_report's
+    # own filtering, which the embed path didn't previously apply.
+    decisions = [d for d in decisions if d.still_needs_attention]
+    if not decisions:
+        await interaction.followup.send(
+            "No unanswered questions right now (AI review cleared all rule-based candidates).",
+            ephemeral=ephemeral,
+        )
+        return
+
     embeds = [
         discord.Embed.from_dict(format_candidate_embed(d, MIN_HOURS_UNANSWERED, now)) for d in decisions
     ]

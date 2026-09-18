@@ -46,7 +46,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from ai_decide.stub import decide
+from ai_decide.stub import Decision, decide
 from data.discord_live import fetch_recent_messages
 from data.loader import load_messages
 from detect.rules import find_unanswered_questions
@@ -55,8 +55,32 @@ from notify.formatter import format_candidate_embed, format_report
 
 MIN_HOURS_UNANSWERED = 4.0  # matches detect.rules.find_unanswered_questions's default
 LOOKBACK_SAFETY_MARGIN_HOURS = 2.0  # covers a slow/delayed cron run without missing a candidate
+MAX_CONTEXT_HOURS = MIN_HOURS_UNANSWERED + LOOKBACK_SAFETY_MARGIN_HOURS  # bounds the LLM context window
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # only GEMINI_API_KEY is configured in .env
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")  # separate/higher free-tier quota than gemini-3.5-flash
+MAX_AI_REVIEW_PER_CALL = 5  # stay well under the free tier's per-minute quota
 LIVE_SEEN_IDS_PATH = Path("output/.live_seen_ids.json")
 CSV_TEST_SEEN_IDS_PATH = Path("output/.live_seen_ids.csv_test.json")
+
+
+def _decide_with_ai_cap(candidates: list, all_messages: list) -> list[Decision]:
+    """AI-reviews at most MAX_AI_REVIEW_PER_CALL candidates (oldest-waiting
+    first, matching find_unanswered_questions's own sort order) -- the rest
+    stay rule-based-only (still reported, just not AI-reviewed) so a run
+    with many new candidates doesn't sit retrying against the free-tier rate
+    limit for minutes."""
+    ai_batch, rule_based_only = candidates[:MAX_AI_REVIEW_PER_CALL], candidates[MAX_AI_REVIEW_PER_CALL:]
+    decisions = decide(ai_batch, all_messages=all_messages, provider=LLM_PROVIDER, model_name=GEMINI_MODEL) if ai_batch else []
+    decisions += [
+        Decision(
+            candidate=c,
+            still_needs_attention=True,
+            confidence=None,
+            rationale="[Rule-based only] Skipped AI review -- over the per-call AI review cap",
+        )
+        for c in rule_based_only
+    ]
+    return decisions
 
 
 def _load_seen_ids(path: Path) -> set[str]:
@@ -117,18 +141,28 @@ def main() -> None:
         print("No new candidates this run")
         return
 
-    decisions = decide(new_candidates)
+    # Bounded context pool -- graph.py's context-gathering has no upper time
+    # bound, so an unbounded `messages` (e.g. the full CSV pack) could dump
+    # hundreds of "subsequent messages" into one LLM prompt.
+    context_pool = [m for m in messages if now - timedelta(hours=MAX_CONTEXT_HOURS) <= m.created_at <= now]
+    decisions = _decide_with_ai_cap(new_candidates, context_pool)
     report = format_report(decisions)
     header = f"=== Live run {now:%Y-%m-%d %H:%M} -- {len(new_candidates)} new ==="
     print(f"{header}\n{report}")
 
-    if webhook_url:
-        embeds = [format_candidate_embed(d, MIN_HOURS_UNANSWERED, now) for d in decisions]
+    # AI classification can clear a rule-based candidate (already answered
+    # per context) -- only still-open ones get posted, matching
+    # format_report's own filtering, which the embed path didn't previously apply.
+    still_open = [d for d in decisions if d.still_needs_attention]
+    if webhook_url and still_open:
+        embeds = [format_candidate_embed(d, MIN_HOURS_UNANSWERED, now) for d in still_open]
         try:
             send_embeds_to_discord(embeds, webhook_url, content=header)
         except RuntimeError as exc:
             sys.exit(f"Failed to post to Discord: {exc}")
         print("\nPosted new candidates to Discord")
+    elif webhook_url:
+        print("\nAI review cleared all new candidates -- nothing posted to Discord")
 
 
 if __name__ == "__main__":
