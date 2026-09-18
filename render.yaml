@@ -1,0 +1,14 @@
+services:
+  - name: labcoach-discord-bot
+    type: worker
+    runtime: python
+    rootDir: codebase
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot_gateway.py
+    envVars:
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: DISCORD_GUILD_ID
+        sync: false
+      - key: DISCORD_CHANNEL_IDS
+        sync: false

@@ -4,6 +4,11 @@
 # --- Discord delivery (--send-to-discord), used now ---
 python-dotenv>=1.2,<2.0
 
+# --- Interactive demo bot (bot_gateway.py), used now --
+# Only the Gateway/slash-command layer needs this; data/discord_live.py's
+# REST fetch stays plain urllib, unchanged.
+discord.py>=2.4,<3.0
+
 # --- CP3, added early so everyone's environment installs cleanly from hour one;
 #     not imported/called anywhere yet ---
 langgraph>=0.2,<0.3
