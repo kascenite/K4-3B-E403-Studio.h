@@ -90,7 +90,7 @@ def format_candidate_embed(decision: Decision, min_hours_unanswered: float, tick
         "title": "⚠️ Câu hỏi chưa được phản hồi",
         "color": EMBED_COLOR_AMBER,
         "fields": [
-            {"name": "👤 Học viên", "value": "*(ẩn danh — an toàn dữ liệu học viên)*", "inline": True},
+            {"name": "👤 Học viên", "value": "*(ẩn danh)*", "inline": True},
             {"name": "📍 Nguồn", "value": f"#{m.channel} · {m.guild}", "inline": True},
             {"name": "💬 Câu hỏi", "value": _short_question(m.content), "inline": False},
             {"name": "📝 Nội dung", "value": f"> *{_excerpt(m.content)}*", "inline": False},
@@ -106,7 +106,6 @@ def format_candidate_embed(decision: Decision, min_hours_unanswered: float, tick
                 "inline": True,
             },
         ],
-        "footer": {"text": f"Nhắc tự động khi câu hỏi chưa có phản hồi sau {min_hours_unanswered:.0f} giờ"},
         "timestamp": tick_time.isoformat(),
     }
 

@@ -49,17 +49,19 @@ MAX_AI_REVIEW_PER_CALL = 5  # stay well under the free tier's per-minute quota
 def _decide_with_ai_cap(candidates: list, all_messages: list) -> list[Decision]:
     """AI-reviews at most MAX_AI_REVIEW_PER_CALL candidates (oldest-waiting
     first, matching find_unanswered_questions's own sort order) -- the rest
-    stay rule-based-only (still reported, just not AI-reviewed) so one tick
-    with many new candidates doesn't sit retrying against the free-tier rate
-    limit for minutes."""
+    stay rule-based-only, defaulting to NOT flagged. detect/rules.py now
+    only excludes bot messages, so the cap-overflow set is most of every
+    message, not a small handful of genuine candidates -- defaulting it to
+    "needs attention" would flood Discord instead of covering a rare edge
+    case."""
     ai_batch, rule_based_only = candidates[:MAX_AI_REVIEW_PER_CALL], candidates[MAX_AI_REVIEW_PER_CALL:]
     decisions = decide(ai_batch, all_messages=all_messages, provider=LLM_PROVIDER) if ai_batch else []
     decisions += [
         Decision(
             candidate=c,
-            still_needs_attention=True,
+            still_needs_attention=False,
             confidence=None,
-            rationale="[Rule-based only] Skipped AI review -- over the per-call AI review cap",
+            rationale="[Rule-based only] Not yet AI-reviewed -- over the per-call AI review cap",
         )
         for c in rule_based_only
     ]
