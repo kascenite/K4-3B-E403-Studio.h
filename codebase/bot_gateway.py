@@ -32,10 +32,17 @@ seen_ids dedup -- unlike run_live.py's "only report a question once"
 notification flow, an on-demand command should always show "what's true
 right now," not "what's new since last time" (which would show nothing
 most of the time in a demo).
+
+/labcoach-demo prefers a pre-computed cache (build_demo_cache.py's output,
+output/demo_cache/<dataset>.json) over a live call to the graph model, so
+repeated demos don't depend on -- or burn through -- the free-tier LLM
+quota. Falls back to a live (capped) AI call if no cache exists yet.
+/labcoach-check always calls live, since it's checking the real channel.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -57,6 +64,44 @@ LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # only GEMINI_API_KEY i
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")  # separate/higher free-tier quota than gemini-3.5-flash
 MAX_AI_REVIEW_PER_CALL = 5  # stay well under the free tier's per-minute quota
 DISCORD_PACK_DIR = Path(__file__).resolve().parent.parent / "data" / "discord-pack"
+DEMO_CACHE_DIR = Path("output/demo_cache")  # built by build_demo_cache.py
+
+
+def _load_cached_decisions(dataset: str, candidates: list) -> list[Decision] | None:
+    """Loads pre-computed decisions for `dataset` from build_demo_cache.py's
+    output, matched back onto the freshly-loaded `candidates` by msg_id.
+    Returns None if no cache exists for this dataset (caller falls back to
+    a live AI call). A candidate not found in the cache (e.g. the CSV
+    changed since the cache was built) degrades to rule-based-only, same
+    shape as _decide_with_ai_cap's own cap fallback."""
+    cache_path = DEMO_CACHE_DIR / f"{Path(dataset).stem}.json"
+    if not cache_path.exists():
+        return None
+
+    cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    cached_by_id = {d["msg_id"]: d for d in cache["decisions"]}
+    decisions = []
+    for c in candidates:
+        cached = cached_by_id.get(c.message.msg_id)
+        if cached is None:
+            decisions.append(
+                Decision(
+                    candidate=c,
+                    still_needs_attention=True,
+                    confidence=None,
+                    rationale="[Rule-based only] Not in demo cache -- rebuild with build_demo_cache.py",
+                )
+            )
+        else:
+            decisions.append(
+                Decision(
+                    candidate=c,
+                    still_needs_attention=cached["still_needs_attention"],
+                    confidence=cached["confidence"],
+                    rationale=cached["rationale"],
+                )
+            )
+    return decisions
 
 
 def _decide_with_ai_cap(candidates: list, all_messages: list) -> list[Decision]:
@@ -96,17 +141,23 @@ client = discord.Client(intents=intents)
 tree = app_commands.CommandTree(client)
 
 
-async def _reply_with_candidates(interaction: discord.Interaction, messages: list, now, ephemeral: bool = False) -> None:
+async def _reply_with_candidates(
+    interaction: discord.Interaction, messages: list, now, ephemeral: bool = False, cache_dataset: str | None = None
+) -> None:
     candidates = find_unanswered_questions(messages, now=now, min_hours_unanswered=MIN_HOURS_UNANSWERED)
     if not candidates:
         await interaction.followup.send("No unanswered questions right now.", ephemeral=ephemeral)
         return
 
-    # Bounded context pool -- graph.py's context-gathering has no upper time
-    # bound, so an unbounded `messages` (e.g. the full CSV pack) could dump
-    # hundreds of "subsequent messages" into one LLM prompt.
-    context_pool = [m for m in messages if now - timedelta(hours=MAX_CONTEXT_HOURS) <= m.created_at <= now]
-    decisions = _decide_with_ai_cap(candidates, context_pool)
+    decisions = _load_cached_decisions(cache_dataset, candidates) if cache_dataset else None
+    if decisions is None:
+        # No cache (or cache_dataset not given, e.g. /labcoach-check against
+        # live data) -- bounded context pool, since graph.py's
+        # context-gathering has no upper time bound and an unbounded
+        # `messages` could dump hundreds of "subsequent messages" into one
+        # LLM prompt.
+        context_pool = [m for m in messages if now - timedelta(hours=MAX_CONTEXT_HOURS) <= m.created_at <= now]
+        decisions = _decide_with_ai_cap(candidates, context_pool)
     # AI classification can clear a rule-based candidate (already answered per
     # context) -- only still-open ones get posted, matching format_report's
     # own filtering, which the embed path didn't previously apply.
@@ -162,7 +213,7 @@ async def labcoach_demo(interaction: discord.Interaction, dataset: str, private:
 
     messages = load_messages(csv_path)
     now = max(m.created_at for m in messages)
-    await _reply_with_candidates(interaction, messages, now, ephemeral=private)
+    await _reply_with_candidates(interaction, messages, now, ephemeral=private, cache_dataset=dataset)
 
 
 MAX_CSV_PREVIEW_ROWS = 25
