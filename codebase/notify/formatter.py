@@ -13,11 +13,13 @@ themselves.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from ai_decide.stub import Decision
 
 MAX_EXCERPT_SENTENCES = 2
+EMBED_COLOR_AMBER = 0xF0B232
 
 
 def _excerpt(content: str) -> str:
@@ -59,6 +61,49 @@ def format_report(decisions: list[Decision]) -> str:
             f"  ({d.rationale})"
         )
     return "\n".join(lines)
+
+
+def _short_question(content: str) -> str:
+    """Deterministic truncation to the first '?' -- every candidate has one
+    (guaranteed by detect/rules.py's filter), so this never invents or
+    paraphrases text, just trims it."""
+    idx = content.find("?")
+    return content[: idx + 1].strip() if idx != -1 else content.strip()
+
+
+def format_candidate_embed(decision: Decision, min_hours_unanswered: float, tick_time: datetime) -> dict:
+    """Builds one Discord embed dict matching outputs/workflow.jpg's message
+    layout for a single still-unanswered candidate.
+
+    SAFETY: same rule as _location() -- never put the (anonymized) author
+    code in the "Học viên" field, per data/loader.py and
+    track-b-discord-assistant.md's safety notes. The field is a placeholder,
+    not the real identifier.
+
+    No functional buttons -- Discord message components require a real bot
+    with an interactions endpoint, which a plain incoming webhook (the only
+    delivery path this project has) cannot provide.
+    """
+    c = decision.candidate
+    m = c.message
+    return {
+        "title": "⚠️ Câu hỏi chưa được phản hồi",
+        "color": EMBED_COLOR_AMBER,
+        "fields": [
+            {"name": "👤 Học viên", "value": "*(ẩn danh — an toàn dữ liệu học viên)*", "inline": True},
+            {"name": "📍 Nguồn", "value": f"#{m.channel} · {m.guild}", "inline": True},
+            {"name": "💬 Câu hỏi", "value": _short_question(m.content), "inline": False},
+            {"name": "📝 Nội dung", "value": f"> *{_excerpt(m.content)}*", "inline": False},
+            {
+                "name": "🕐 Thời gian chờ",
+                "value": f"{c.hours_since_posted:.1f} giờ · Đăng lúc {m.created_at:%Y-%m-%d %H:%M}",
+                "inline": True,
+            },
+            {"name": "💬 Phản hồi", "value": "0 phản hồi · Chưa tiếp nhận", "inline": True},
+        ],
+        "footer": {"text": f"Nhắc tự động khi câu hỏi chưa có phản hồi sau {min_hours_unanswered:.0f} giờ"},
+        "timestamp": tick_time.isoformat(),
+    }
 
 
 def write_report(report_text: str, out_path: str | Path) -> None:
