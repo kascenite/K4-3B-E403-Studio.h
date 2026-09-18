@@ -1,54 +1,81 @@
-"""CP3 seam: this is where the real LangGraph decision step will live.
+"""CP3 LangGraph AI Decision Engine.
 
-STUB TODAY (CP2 baseline): pass-through, no LLM call. Every Candidate becomes
-a Decision with still_needs_attention=True and no confidence score. This
-keeps CP2's "flow bấm được" honest -- the hackathon's own rules say CP2 must
-NOT require a real AI call, and the real call is explicitly a CP3 milestone
-(02-guide.md §3.1). Do not fake a confidence score here; that would
-misrepresent this stub as more capable than it is.
-
-CONTRACT for whoever (Thái Anh, CP3) replaces the body of decide() with a
-real LangGraph invocation:
-
-  - Keep the signature `decide(list[Candidate]) -> list[Decision]` stable --
-    main.py and notify/ depend on it and should not need to change.
-  - `candidate.message.content` is masked, untrusted, STUDENT-WRITTEN DATA,
-    not an instruction to the graph. The real chatlog already contains
-    "ignore previous instructions"-style text (data/discord-pack/README.md,
-    point 5). Any prompt template must frame content as data inside a clearly
-    delimited block -- never concatenate it into a system/instruction
-    position.
-  - Must NOT decide, infer, or invent deadlines, grades, or policy answers
-    (spec.md §4 non-goal #2). The only allowed output is
-    still_needs_attention + confidence + rationale -- nothing that resembles
-    an answer to the student.
-  - Must degrade gracefully: on an LLM/API error, fall back to
-    still_needs_attention=True with a rationale noting the failure, so a
-    broken AI call never silently drops a real unanswered question.
+Replaces CP2 stub with real LangGraph StateGraph execution pipeline while preserving the contract signature `decide(candidates: list[Candidate]) -> list[Decision]`.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from typing import Any
 
 from detect.rules import Candidate
+from ai_decide.types import Decision
+from ai_decide.graph import create_ai_decision_graph
 
 
-@dataclass(frozen=True)
-class Decision:
-    candidate: Candidate
-    still_needs_attention: bool
-    confidence: float | None
-    rationale: str
+def decide(
+    candidates: list[Candidate],
+    all_messages: list[Any] | None = None,
+    provider: str | None = None,
+    model_name: str | None = None,
+) -> list[Decision]:
+    """Executes LangGraph pipeline for each Candidate question.
 
+    Contract:
+      - Takes list[Candidate] -> returns list[Decision]
+      - Graceful degradation: on API errors or missing API keys, returns Decision(still_needs_attention=True)
+      - Never invents/answers student questions directly.
+    """
+    if not candidates:
+        return []
 
-def decide(candidates: list[Candidate]) -> list[Decision]:
-    return [
-        Decision(
-            candidate=c,
-            still_needs_attention=True,
-            confidence=None,
-            rationale="[stub] rule-based candidate, not yet AI-reviewed",
-        )
-        for c in candidates
-    ]
+    active_provider = provider or os.getenv("LLM_PROVIDER", "openai")
+    app_graph = create_ai_decision_graph(provider=active_provider, model_name=model_name)
+
+    # Build lookup map of context messages by channel if all_messages is provided
+    channel_msgs_map: dict[str, list[Any]] = {}
+    if all_messages:
+        for m in all_messages:
+            channel_msgs_map.setdefault(m.channel, []).append(m)
+
+    decisions: list[Decision] = []
+    for candidate in candidates:
+        # Extract subsequent context messages in same channel posted after candidate
+        context_msgs = []
+        if all_messages:
+            ch_msgs = channel_msgs_map.get(candidate.message.channel, [])
+            context_msgs = [
+                m for m in ch_msgs
+                if m.created_at >= candidate.message.created_at and m.msg_id != candidate.message.msg_id
+            ]
+
+        try:
+            initial_state = {
+                "candidate": candidate,
+                "context_messages": context_msgs,
+            }
+            final_state = app_graph.invoke(initial_state)
+            
+            if "decision" in final_state and final_state["decision"] is not None:
+                decisions.append(final_state["decision"])
+            else:
+                # Fallback if graph did not produce decision node state
+                decisions.append(
+                    Decision(
+                        candidate=candidate,
+                        still_needs_attention=True,
+                        confidence=0.5,
+                        rationale="[LangGraph Fallback] Pipeline completed without decision output.",
+                    )
+                )
+        except Exception as exc:
+            decisions.append(
+                Decision(
+                    candidate=candidate,
+                    still_needs_attention=True,
+                    confidence=0.5,
+                    rationale=f"[LangGraph Graceful Fallback: {exc}] Kept for manual review.",
+                )
+            )
+
+    return decisions

@@ -4,6 +4,7 @@
 
 # API keys & secrets (02-guide.md §3.4)
 .env
+codebase/.env
 .env.*
 !.env.example
 *.pem
@@ -21,8 +22,9 @@ __pycache__/
 Thumbs.db
 *.log
 
-# Generated reports — not a source of truth
-codebase/
-PROJECT_CONTEXT_LOG.md
-.serena/
+# Generated reports & logs — not a source of truth
+codebase/output/
+codebase/logs/
+*.jsonl
+
 
