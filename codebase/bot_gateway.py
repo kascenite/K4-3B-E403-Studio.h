@@ -63,12 +63,17 @@ from data.loader import load_messages
 from detect.rules import find_unanswered_questions
 from notify.formatter import format_candidate_embed
 
+load_dotenv()  # must run before any os.environ.get() below, or .env-only values are silently ignored
+
 MIN_HOURS_UNANSWERED = 4.0  # /labcoach-demo (CSV path) -- must match build_demo_cache.py's cache, don't change lightly
 LIVE_MIN_HOURS_UNANSWERED = float(os.environ.get("LIVE_MIN_HOURS_UNANSWERED", "1.0"))  # /labcoach-check only -- lowered for demo purposes, real messages rarely sit unanswered for a full 4h during a live demo
 LOOKBACK_SAFETY_MARGIN_HOURS = 2.0  # matches run_live.py's live-mode lookback
 MAX_CONTEXT_HOURS = MIN_HOURS_UNANSWERED + LOOKBACK_SAFETY_MARGIN_HOURS  # bounds the LLM context window
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # only GEMINI_API_KEY is configured in .env
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")  # separate/higher free-tier quota than gemini-3.5-flash
+# No model_name is passed to decide() -- ai_decide/llm_factory.py already
+# resolves the right one per provider (OPENAI_MODEL/GEMINI_MODEL/ANTHROPIC_MODEL,
+# see .env.example). Passing one here would hardcode a Gemini-shaped model
+# name that breaks if LLM_PROVIDER is ever switched to openai/anthropic.
 MAX_AI_REVIEW_PER_CALL = 5  # stay well under the free tier's per-minute quota
 DISCORD_PACK_DIR = Path(__file__).resolve().parent.parent / "data" / "discord-pack"
 DEMO_CACHE_DIR = Path("output/demo_cache")  # built by build_demo_cache.py
@@ -118,7 +123,7 @@ def _decide_with_ai_cap(candidates: list, all_messages: list) -> list[Decision]:
     with many candidates doesn't sit retrying against the free-tier rate
     limit for minutes."""
     ai_batch, rule_based_only = candidates[:MAX_AI_REVIEW_PER_CALL], candidates[MAX_AI_REVIEW_PER_CALL:]
-    decisions = decide(ai_batch, all_messages=all_messages, provider=LLM_PROVIDER, model_name=GEMINI_MODEL) if ai_batch else []
+    decisions = decide(ai_batch, all_messages=all_messages, provider=LLM_PROVIDER) if ai_batch else []
     decisions += [
         Decision(
             candidate=c,
@@ -130,7 +135,6 @@ def _decide_with_ai_cap(candidates: list, all_messages: list) -> list[Decision]:
     ]
     return decisions
 
-load_dotenv()
 
 BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN")
 GUILD_ID = os.environ.get("DISCORD_GUILD_ID")

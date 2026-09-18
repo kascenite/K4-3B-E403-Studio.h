@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -27,16 +28,19 @@ from ai_decide.stub import decide
 from data.loader import default_csv_path, load_messages
 from detect.rules import find_unanswered_questions
 
+load_dotenv()  # must run before any os.environ.get() below, or .env-only values are silently ignored
+
 MIN_HOURS_UNANSWERED = 4.0
 MAX_CONTEXT_HOURS = 6.0  # matches bot_gateway.py's bounded context window
-LLM_PROVIDER = "gemini"
-GEMINI_MODEL = "gemini-3.5-flash-lite"
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # only GEMINI_API_KEY is configured in .env
+# No model_name is passed to decide() -- ai_decide/llm_factory.py already
+# resolves the right one per provider (OPENAI_MODEL/GEMINI_MODEL/ANTHROPIC_MODEL,
+# see .env.example). Passing one here would hardcode a Gemini-shaped model
+# name that breaks if LLM_PROVIDER is ever switched to openai/anthropic.
 CACHE_DIR = Path("output/demo_cache")
 
 
 def main() -> None:
-    load_dotenv()
-
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", type=str, default=None, help="Path to the CSV pack to cache (default: data/discord-pack/)")
     args = parser.parse_args()

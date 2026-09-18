@@ -33,12 +33,16 @@ from detect.rules import find_unanswered_questions
 from notify.discord_client import send_embeds_to_discord
 from notify.formatter import format_candidate_embed, format_report, write_report
 
+load_dotenv()  # must run before any os.environ.get() below, or .env-only values are silently ignored
 
 MIN_HOURS_UNANSWERED = 4.0  # matches detect.rules.find_unanswered_questions's default
 LOOKBACK_SAFETY_MARGIN_HOURS = 2.0  # matches run_live.py's live-mode lookback
 MAX_CONTEXT_HOURS = MIN_HOURS_UNANSWERED + LOOKBACK_SAFETY_MARGIN_HOURS  # bounds the LLM context window per tick
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # only GEMINI_API_KEY is configured in .env
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")  # separate/higher free-tier quota than gemini-3.5-flash
+# No model_name is passed to decide() -- ai_decide/llm_factory.py already
+# resolves the right one per provider (OPENAI_MODEL/GEMINI_MODEL/ANTHROPIC_MODEL,
+# see .env.example). Passing one here would hardcode a Gemini-shaped model
+# name that breaks if LLM_PROVIDER is ever switched to openai/anthropic.
 MAX_AI_REVIEW_PER_CALL = 5  # stay well under the free tier's per-minute quota
 
 
@@ -49,7 +53,7 @@ def _decide_with_ai_cap(candidates: list, all_messages: list) -> list[Decision]:
     with many new candidates doesn't sit retrying against the free-tier rate
     limit for minutes."""
     ai_batch, rule_based_only = candidates[:MAX_AI_REVIEW_PER_CALL], candidates[MAX_AI_REVIEW_PER_CALL:]
-    decisions = decide(ai_batch, all_messages=all_messages, provider=LLM_PROVIDER, model_name=GEMINI_MODEL) if ai_batch else []
+    decisions = decide(ai_batch, all_messages=all_messages, provider=LLM_PROVIDER) if ai_batch else []
     decisions += [
         Decision(
             candidate=c,
@@ -79,8 +83,6 @@ def _tick_range(messages, tick_minutes: int) -> list[datetime]:
 
 
 def main() -> None:
-    load_dotenv()
-
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", type=str, default=None, help="Path to k4_messages.csv (default: data/discord-pack/)")
     parser.add_argument("--tick-minutes", type=int, default=30, help="Simulated cron interval in minutes (default: 30)")
