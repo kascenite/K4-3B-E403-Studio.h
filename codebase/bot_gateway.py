@@ -38,6 +38,12 @@ output/demo_cache/<dataset>.json) over a live call to the graph model, so
 repeated demos don't depend on -- or burn through -- the free-tier LLM
 quota. Falls back to a live (capped) AI call if no cache exists yet.
 /labcoach-check always calls live, since it's checking the real channel.
+
+/labcoach-check uses LIVE_MIN_HOURS_UNANSWERED (default 1h, env-overridable)
+instead of the production 4h threshold -- a real unanswered question
+rarely sits for 4 real hours during a live demo session, so the CSV/cache
+path (MIN_HOURS_UNANSWERED, must match build_demo_cache.py's cache) and
+the live path are intentionally different constants.
 """
 
 from __future__ import annotations
@@ -57,7 +63,8 @@ from data.loader import load_messages
 from detect.rules import find_unanswered_questions
 from notify.formatter import format_candidate_embed
 
-MIN_HOURS_UNANSWERED = 4.0  # matches detect.rules.find_unanswered_questions's default
+MIN_HOURS_UNANSWERED = 4.0  # /labcoach-demo (CSV path) -- must match build_demo_cache.py's cache, don't change lightly
+LIVE_MIN_HOURS_UNANSWERED = float(os.environ.get("LIVE_MIN_HOURS_UNANSWERED", "1.0"))  # /labcoach-check only -- lowered for demo purposes, real messages rarely sit unanswered for a full 4h during a live demo
 LOOKBACK_SAFETY_MARGIN_HOURS = 2.0  # matches run_live.py's live-mode lookback
 MAX_CONTEXT_HOURS = MIN_HOURS_UNANSWERED + LOOKBACK_SAFETY_MARGIN_HOURS  # bounds the LLM context window
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "gemini")  # only GEMINI_API_KEY is configured in .env
@@ -142,9 +149,14 @@ tree = app_commands.CommandTree(client)
 
 
 async def _reply_with_candidates(
-    interaction: discord.Interaction, messages: list, now, ephemeral: bool = False, cache_dataset: str | None = None
+    interaction: discord.Interaction,
+    messages: list,
+    now,
+    ephemeral: bool = False,
+    cache_dataset: str | None = None,
+    min_hours_unanswered: float = MIN_HOURS_UNANSWERED,
 ) -> None:
-    candidates = find_unanswered_questions(messages, now=now, min_hours_unanswered=MIN_HOURS_UNANSWERED)
+    candidates = find_unanswered_questions(messages, now=now, min_hours_unanswered=min_hours_unanswered)
     if not candidates:
         await interaction.followup.send("No unanswered questions right now.", ephemeral=ephemeral)
         return
@@ -170,7 +182,7 @@ async def _reply_with_candidates(
         return
 
     embeds = [
-        discord.Embed.from_dict(format_candidate_embed(d, MIN_HOURS_UNANSWERED, now)) for d in decisions
+        discord.Embed.from_dict(format_candidate_embed(d, min_hours_unanswered, now)) for d in decisions
     ]
     # Discord caps a single message at 10 embeds -- send in batches if needed.
     for i in range(0, len(embeds), 10):
@@ -185,9 +197,9 @@ async def _reply_with_candidates(
 async def labcoach_check(interaction: discord.Interaction) -> None:
     await interaction.response.defer()
     now = datetime.now()
-    since = now - timedelta(hours=MIN_HOURS_UNANSWERED + LOOKBACK_SAFETY_MARGIN_HOURS)
+    since = now - timedelta(hours=LIVE_MIN_HOURS_UNANSWERED + LOOKBACK_SAFETY_MARGIN_HOURS)
     messages = fetch_recent_messages(CHANNEL_IDS, GUILD_ID, BOT_TOKEN, since)
-    await _reply_with_candidates(interaction, messages, now)
+    await _reply_with_candidates(interaction, messages, now, min_hours_unanswered=LIVE_MIN_HOURS_UNANSWERED)
 
 
 async def _dataset_autocomplete(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
